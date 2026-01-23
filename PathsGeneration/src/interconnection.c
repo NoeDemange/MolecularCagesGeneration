@@ -524,11 +524,11 @@ void enumInterconnectionTrees(int *vertices_link_id_comp, int *tab_c, int *inter
 
   // Base case: if we have enough edges,
   if (K >= (k - 1)) {
-    cpt_inter_tree_egv++;
-    printf("New Interconnection Tree %d: \n", cpt_inter_tree_egv);
     if (tree_store) {
       appendTree(tree_store, inter_tree);
     } else {
+      cpt_inter_tree_egv++;
+      printf("New Interconnection Tree %d: \n", cpt_inter_tree_egv);
       generatePaths(cage, inter_tree, paths, grid_sub, substrat_t, options, list_banned_edges,
                     size_list_banned_edges);
     }
@@ -767,6 +767,8 @@ void findInterconnection(Cage_t *cage, GridSubstrat *grid_sub, double ***substra
             treeContainsBannedEdge(tree_store.items[i].edges, num_paths, list_banned_edges, size_list_banned_edges)) {
           continue;
         }
+        cpt_inter_tree_egv++;
+        printf("New Interconnection Tree %d: \n", cpt_inter_tree_egv);
         generatePaths(cage, tree_store.items[i].edges, paths, grid_sub, substrat_t, options, list_banned_edges,
                       &size_list_banned_edges);
       }
