@@ -175,6 +175,118 @@ void reconstructPath(Node *end, Grid_t *grid) {
   }
 }
 
+static inline int clampIndex(int value, int limit) {
+  if (limit <= 0) {
+    return 0;
+  }
+  if (value < 0) {
+    return 0;
+  }
+  if (value >= limit) {
+    return limit - 1;
+  }
+  return value;
+}
+
+static Node *findClosestWalkableVertex(Point_t point, Grid_t *grid, double *distance_out) {
+  double scaled_x = (point.x / STEP_GRID_VOXEL) + grid->offset_x;
+  double scaled_y = (point.y / STEP_GRID_VOXEL) + grid->offset_y;
+  double scaled_z = (point.z / STEP_GRID_VOXEL) + grid->offset_z;
+
+  int base_x = (int)floor(scaled_x);
+  int base_y = (int)floor(scaled_y);
+  int base_z = (int)floor(scaled_z);
+
+  if (base_x < 0 || base_y < 0 || base_z < 0 || base_x + 1 >= grid->width || base_y + 1 >= grid->height ||
+      base_z + 1 >= grid->depth) {
+    return NULL;
+  }
+
+  double best_dist = DBL_MAX;
+  Node *best_node = NULL;
+
+  for (int dx = 0; dx <= 1; dx++) {
+    for (int dy = 0; dy <= 1; dy++) {
+      for (int dz = 0; dz <= 1; dz++) {
+        int vx = base_x + dx;
+        int vy = base_y + dy;
+        int vz = base_z + dz;
+
+        Node *vertex = &grid->nodes[vx][vy][vz];
+        if (!vertex->walkable) {
+          continue;
+        }
+
+        Point_t vertex_world = {VOXEL_TO_WORLD(vx, grid->offset_x, STEP_GRID_VOXEL),
+                                VOXEL_TO_WORLD(vy, grid->offset_y, STEP_GRID_VOXEL),
+                                VOXEL_TO_WORLD(vz, grid->offset_z, STEP_GRID_VOXEL)};
+        double tmp_dist = dist(point, vertex_world);
+        if (tmp_dist < best_dist) {
+          best_node = vertex;
+          best_dist = tmp_dist;
+        }
+      }
+    }
+  }
+
+  if (best_node && distance_out) {
+    *distance_out = best_dist;
+  }
+  return best_node;
+}
+
+static Node *findClosestWalkableNeighbor(Point_t point, Grid_t *grid, double *distance_out) {
+  Node *vertex = findClosestWalkableVertex(point, grid, distance_out);
+  if (vertex) {
+    return vertex;
+  }
+
+  int center_x = clampIndex(WORLD_TO_VOXEL(point.x, grid->offset_x, STEP_GRID_VOXEL), grid->width);
+  int center_y = clampIndex(WORLD_TO_VOXEL(point.y, grid->offset_y, STEP_GRID_VOXEL), grid->height);
+  int center_z = clampIndex(WORLD_TO_VOXEL(point.z, grid->offset_z, STEP_GRID_VOXEL), grid->depth);
+
+  double best_dist = DBL_MAX;
+  Node *best_node = NULL;
+
+  for (int dx = -1; dx <= 1; dx++) {
+    int neighbor_x = center_x + dx;
+    if (neighbor_x < 0 || neighbor_x >= grid->width) {
+      continue;
+    }
+    for (int dy = -1; dy <= 1; dy++) {
+      int neighbor_y = center_y + dy;
+      if (neighbor_y < 0 || neighbor_y >= grid->height) {
+        continue;
+      }
+      for (int dz = -1; dz <= 1; dz++) {
+        int neighbor_z = center_z + dz;
+        if (neighbor_z < 0 || neighbor_z >= grid->depth) {
+          continue;
+        }
+
+        Node *neighbor = &grid->nodes[neighbor_x][neighbor_y][neighbor_z];
+        if (!neighbor->walkable) {
+          continue;
+        }
+
+        Point_t neighbor_world = {VOXEL_TO_WORLD(neighbor_x, grid->offset_x, STEP_GRID_VOXEL),
+                                  VOXEL_TO_WORLD(neighbor_y, grid->offset_y, STEP_GRID_VOXEL),
+                                  VOXEL_TO_WORLD(neighbor_z, grid->offset_z, STEP_GRID_VOXEL)};
+        double tmp_dist = dist(point, neighbor_world);
+        if (tmp_dist < best_dist) {
+          best_node = neighbor;
+          best_dist = tmp_dist;
+        }
+      }
+    }
+  }
+
+  if (best_node && distance_out) {
+    *distance_out = best_dist;
+  }
+  return best_node;
+}
+
 /**
  * @brief Compute the A* distance between a start point and an end point.
  *
@@ -195,110 +307,26 @@ double aStarDistance(Point_t start, Point_t end, Grid_t *grid, MinHeap_t *heap) 
     resetGridState(grid);
   }
 
-  // End point in voxel coordinates
-  int end_x = WORLD_TO_VOXEL(end.x, grid->offset_x, STEP_GRID_VOXEL);
-  int end_y = WORLD_TO_VOXEL(end.y, grid->offset_y, STEP_GRID_VOXEL);
-  int end_z = WORLD_TO_VOXEL(end.z, grid->offset_z, STEP_GRID_VOXEL);
   double end_dist = DBL_MAX;
-  Node *end_node = NULL;
-  for (int dx = -1; dx <= 1; dx++) {
-    for (int dy = -1; dy <= 1; dy++) {
-      for (int dz = -1; dz <= 1; dz++) {
-        int neighbor_x = end_x + dx;
-        int neighbor_y = end_y + dy;
-        int neighbor_z = end_z + dz;
-        // Check if the neighbor is within bounds
-        if (neighbor_x < 0 || neighbor_x >= grid->width || neighbor_y < 0 || neighbor_y >= grid->height ||
-            neighbor_z < 0 || neighbor_z >= grid->depth) {
-          continue;
-        }
-        // Check if the neighbor is walkable
-        if (grid->nodes[neighbor_x][neighbor_y][neighbor_z].walkable) {
-          double tmp_dist = dist(end, (Point_t){VOXEL_TO_WORLD(neighbor_x, grid->offset_x, STEP_GRID_VOXEL),
-                                                VOXEL_TO_WORLD(neighbor_y, grid->offset_y, STEP_GRID_VOXEL),
-                                                VOXEL_TO_WORLD(neighbor_z, grid->offset_z, STEP_GRID_VOXEL)});
-          if (tmp_dist < end_dist) {
-            end_node = &grid->nodes[neighbor_x][neighbor_y][neighbor_z];
-            end_dist = tmp_dist;
-          }
-        }
-      }
-    }
-  }
+  Node *end_node = findClosestWalkableNeighbor(end, grid, &end_dist);
   if (end_node == NULL) {
     return -1; // No path exists, end point is not walkable
   }
 
-  // printf("A* distance: start (%f, %f, %f) end (%f, %f, %f)\n", start.x, start.y, start.z, end.x, end.y, end.z);
-
-  // Convert the start point from world coordinates to voxel coordinates
-  int start_x = WORLD_TO_VOXEL(start.x, grid->offset_x, STEP_GRID_VOXEL);
-  int start_y = WORLD_TO_VOXEL(start.y, grid->offset_y, STEP_GRID_VOXEL);
-  int start_z = WORLD_TO_VOXEL(start.z, grid->offset_z, STEP_GRID_VOXEL);
-
-  // Check if the start point is outside the grid bounds
-  if (start_x < 0 || start_x >= grid->width || start_y < 0 || start_y >= grid->height || start_z < 0 ||
-      start_z >= grid->depth) {
-    // Convert to the nearest voxel in the grid
-    start_x = fmax(0, fmin(start_x, grid->width - 1));
-    start_y = fmax(0, fmin(start_y, grid->height - 1));
-    start_z = fmax(0, fmin(start_z, grid->depth - 1));
-    if (!grid->nodes[start_x][start_y][start_z].walkable && grid->nodes[start_x][start_y][start_z].opened) {
-      return -1; // No path exists, normaly not used because boundaries are walkable
-    }
-    // Initialize start nodes
-    Node *start_node = &grid->nodes[start_x][start_y][start_z];
-    start_node->gCost = dist(start, (Point_t){VOXEL_TO_WORLD(start_x, grid->offset_x, STEP_GRID_VOXEL),
-                                              VOXEL_TO_WORLD(start_y, grid->offset_y, STEP_GRID_VOXEL),
-                                              VOXEL_TO_WORLD(start_z, grid->offset_z, STEP_GRID_VOXEL)});
-    start_node->hCost = heuristic(start_node, end_node);
-    start_node->fCost = start_node->gCost + start_node->hCost;
-    start_node->opened = 1;
-    addVisitedNode(grid, start_node); // Track this node for efficient reset
-    insertMinHeap(heap, start_node);
-  } else {
-    double start_dist = DBL_MAX;
-    Node *start_node = NULL;
-    for (int dx = -1; dx <= 1; dx++) {
-      for (int dy = -1; dy <= 1; dy++) {
-        for (int dz = -1; dz <= 1; dz++) {
-          int neighbor_x = start_x + dx;
-          int neighbor_y = start_y + dy;
-          int neighbor_z = start_z + dz;
-          // Check if the neighbor is within bounds
-          if (neighbor_x < 0 || neighbor_x >= grid->width || neighbor_y < 0 || neighbor_y >= grid->height ||
-              neighbor_z < 0 || neighbor_z >= grid->depth) {
-            continue;
-          }
-
-          if (grid->nodes[neighbor_x][neighbor_y][neighbor_z].walkable &&
-              !grid->nodes[neighbor_x][neighbor_y][neighbor_z].opened) {
-            double tmp_dist =
-                    dist(start, (Point_t){VOXEL_TO_WORLD(neighbor_x, grid->offset_x, STEP_GRID_VOXEL),
-                                              VOXEL_TO_WORLD(neighbor_y, grid->offset_y, STEP_GRID_VOXEL),
-                                              VOXEL_TO_WORLD(neighbor_z, grid->offset_z, STEP_GRID_VOXEL)});
-                if (tmp_dist < start_dist) {
-                  start_node = &grid->nodes[neighbor_x][neighbor_y][neighbor_z];
-                  start_dist = tmp_dist;
-                }
-          }
-        }
-      }
-    }
-    if (start_node == NULL) {
-          printf("Error: No walkable node found for start point\n");
-          printf("Start point: (%f, %f, %f)\n", start.x, start.y, start.z);
-          return -1; // No path exists, start point is not walkable
-        }
-    // Initialize start nodes
-    start_node->gCost = start_dist;
-    start_node->hCost = heuristic(start_node, end_node);
-    start_node->fCost = start_node->gCost + start_node->hCost;
-    start_node->opened = 1;
-    addVisitedNode(grid, start_node); // Track this node for efficient reset
-    // printNode(start_node, grid);
-    insertMinHeap(heap, start_node);
+  double start_dist = DBL_MAX;
+  Node *start_node = findClosestWalkableNeighbor(start, grid, &start_dist);
+  if (start_node == NULL) {
+    printf("Error: No walkable node found for start point\n");
+    printf("Start point: (%f, %f, %f)\n", start.x, start.y, start.z);
+    return -1;
   }
+
+  start_node->gCost = start_dist;
+  start_node->hCost = heuristic(start_node, end_node);
+  start_node->fCost = start_node->gCost + start_node->hCost;
+  start_node->opened = 1;
+  addVisitedNode(grid, start_node);
+  insertMinHeap(heap, start_node);
   
 
   // A* algorithm loop
@@ -447,87 +475,25 @@ int dSSMTAstar(Point_t end, Paths_t *paths, int num_starts, int growth_limit) {
       }
 #endif
 
-      int start_x = WORLD_TO_VOXEL(starts[i].x, grid->offset_x, STEP_GRID_VOXEL);
-      int start_y = WORLD_TO_VOXEL(starts[i].y, grid->offset_y, STEP_GRID_VOXEL);
-      int start_z = WORLD_TO_VOXEL(starts[i].z, grid->offset_z, STEP_GRID_VOXEL);
-
-      // Check if the start point is outside the grid bounds
-      if (start_x < 0 || start_x >= grid->width || start_y < 0 || start_y >= grid->height || start_z < 0 ||
-          start_z >= grid->depth) {
-        // Convert to the nearest voxel in the grid
-        start_x = fmax(0, fmin(start_x, grid->width - 1));
-        start_y = fmax(0, fmin(start_y, grid->height - 1));
-        start_z = fmax(0, fmin(start_z, grid->depth - 1));
-        if (!grid->nodes[start_x][start_y][start_z].walkable && grid->nodes[start_x][start_y][start_z].opened) {
-          printf("Warning: Start point %d is not walkable and outside grid bounds. Skipping this start.\n", i);
-          continue; // No path exists, normaly not used because boundaries are walkable
-        }
-        // Initialize start nodes
-        Node *start_node = &grid->nodes[start_x][start_y][start_z];
-        if (start_node->nbTimesCandidate == 0) {
-          addVisitedNode(grid, start_node);
-        }
-        if (start_node->nbTimesCandidate >= MAX_POSITION_KEEP_360) {
-          fprintf(stderr,
-                  "Warning: candidate node hit capacity (%d) while mapping start %d; skipping this start.\n",
-                  MAX_POSITION_KEEP_360, i);
-          continue;
-        }
-        start_node->indexStartsCandidates[start_node->nbTimesCandidate] = i;
-        start_node->nbTimesCandidate++;
-        if (start_node->nbTimesCandidate == 1) {
-          candidates[nb_candidates] = start_node;
-          nb_candidates++;
-        }
-      } else {
-        double start_dist = DBL_MAX;
-        Node *start_node = NULL;
-        for (int dx = -1; dx <= 1; dx++) {
-          for (int dy = -1; dy <= 1; dy++) {
-            for (int dz = -1; dz <= 1; dz++) {
-              int neighbor_x = start_x + dx;
-              int neighbor_y = start_y + dy;
-              int neighbor_z = start_z + dz;
-              // Check if the neighbor is within bounds
-              if (neighbor_x < 0 || neighbor_x >= grid->width || neighbor_y < 0 || neighbor_y >= grid->height ||
-                  neighbor_z < 0 || neighbor_z >= grid->depth) {
-                continue;
-              }
-
-              if (grid->nodes[neighbor_x][neighbor_y][neighbor_z].walkable &&
-                  !grid->nodes[neighbor_x][neighbor_y][neighbor_z].opened) {
-                double tmp_dist =
-                    dist(starts[i], (Point_t){VOXEL_TO_WORLD(neighbor_x, grid->offset_x, STEP_GRID_VOXEL),
-                                              VOXEL_TO_WORLD(neighbor_y, grid->offset_y, STEP_GRID_VOXEL),
-                                              VOXEL_TO_WORLD(neighbor_z, grid->offset_z, STEP_GRID_VOXEL)});
-                if (tmp_dist < start_dist) {
-                  start_node = &grid->nodes[neighbor_x][neighbor_y][neighbor_z];
-                  start_dist = tmp_dist;
-                }
-              }
-            }
-          }
-        }
-        if (start_node == NULL) {
-          printf("Error: No walkable node found for start point %d\n", i);
-          printf("Start point: (%f, %f, %f)\n", starts[i].x, starts[i].y, starts[i].z);
-          continue;
-        }
-        if (start_node->nbTimesCandidate == 0) {
-          addVisitedNode(grid, start_node);
-        }
-        if (start_node->nbTimesCandidate >= MAX_POSITION_KEEP_360) {
-          fprintf(stderr,
-                  "Warning: candidate node hit capacity (%d) while mapping start %d; skipping this start.\n",
-                  MAX_POSITION_KEEP_360, i);
-          continue;
-        }
-        start_node->indexStartsCandidates[start_node->nbTimesCandidate] = i;
-        start_node->nbTimesCandidate++;
-        if (start_node->nbTimesCandidate == 1) {
-          candidates[nb_candidates] = start_node;
-          nb_candidates++;
-        }
+      Node *start_node = findClosestWalkableNeighbor(starts[i], grid, NULL);
+      if (start_node == NULL) {
+        printf("Error: No walkable node found for start point %d\n", i);
+        printf("Start point: (%f, %f, %f)\n", starts[i].x, starts[i].y, starts[i].z);
+        continue;
+      }
+      if (start_node->nbTimesCandidate == 0) {
+        addVisitedNode(grid, start_node);
+      }
+      if (start_node->nbTimesCandidate >= MAX_POSITION_KEEP_360) {
+        fprintf(stderr, "Warning: candidate node hit capacity (%d) while mapping start %d; skipping this start.\n",
+                MAX_POSITION_KEEP_360, i);
+        continue;
+      }
+      start_node->indexStartsCandidates[start_node->nbTimesCandidate] = i;
+      start_node->nbTimesCandidate++;
+      if (start_node->nbTimesCandidate == 1) {
+        candidates[nb_candidates] = start_node;
+        nb_candidates++;
       }
     } else {
   #ifdef ENABLE_STATS
@@ -541,36 +507,8 @@ int dSSMTAstar(Point_t end, Paths_t *paths, int num_starts, int growth_limit) {
   }
 
   // End point in voxel coordinates
-  int end_x = WORLD_TO_VOXEL(end.x, grid->offset_x, STEP_GRID_VOXEL);
-  int end_y = WORLD_TO_VOXEL(end.y, grid->offset_y, STEP_GRID_VOXEL);
-  int end_z = WORLD_TO_VOXEL(end.z, grid->offset_z, STEP_GRID_VOXEL);
   double end_dist = DBL_MAX;
-  Node *end_node = NULL;
-  for (int dx = -1; dx <= 1; dx++) {
-    for (int dy = -1; dy <= 1; dy++) {
-      for (int dz = -1; dz <= 1; dz++) {
-        int neighbor_x = end_x + dx;
-        int neighbor_y = end_y + dy;
-        int neighbor_z = end_z + dz;
-        // Check if the neighbor is within bounds
-        if (neighbor_x < 0 || neighbor_x >= grid->width || neighbor_y < 0 || neighbor_y >= grid->height ||
-            neighbor_z < 0 || neighbor_z >= grid->depth) {
-          continue;
-        }
-        // Check if the neighbor is walkable
-        if (grid->nodes[neighbor_x][neighbor_y][neighbor_z].walkable) {
-          //end_node = &grid->nodes[neighbor_x][neighbor_y][neighbor_z];
-          double tmp_dist = dist(end, (Point_t){VOXEL_TO_WORLD(neighbor_x, grid->offset_x, STEP_GRID_VOXEL),
-                                                VOXEL_TO_WORLD(neighbor_y, grid->offset_y, STEP_GRID_VOXEL),
-                                                VOXEL_TO_WORLD(neighbor_z, grid->offset_z, STEP_GRID_VOXEL)});
-          if (tmp_dist < end_dist) {
-            end_node = &grid->nodes[neighbor_x][neighbor_y][neighbor_z];
-            end_dist = tmp_dist;
-          }
-        }
-      }
-    }
-  }
+  Node *end_node = findClosestWalkableNeighbor(end, grid, &end_dist);
 
   if (end_node == NULL) {
     return 0; // No path exists, end point is not walkable, results is empty.
