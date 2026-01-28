@@ -1118,10 +1118,10 @@ void generatePaths(Cage_t *cage, int *interTree, Paths_t *paths, GridSubstrat *g
             // end is put in paths->curPthPos[k]+1 but paths->curPthPos[k] is not increase by 1. End's hydrogen is in
             // paths->curPthPos[k]+2
 
-            //update the path MSD 
-            paths->pathMSD[paths->currentPath] = ((DIST_SIMPLE - distance_to_end) * (DIST_SIMPLE - distance_to_end) +
-                                                  (END_ANGLE - before_last_angle) * (END_ANGLE - before_last_angle) +
-                                                  (END_ANGLE - last_angle) * (END_ANGLE - last_angle)
+            //update the path NRMSD 
+            paths->pathRMSD[paths->currentPath] = sqrt(((DIST_SIMPLE - distance_to_end)/DIST_ERROR) * ((DIST_SIMPLE - distance_to_end)/DIST_ERROR) +
+                                                  (END_ANGLE - before_last_angle)/ANGLE_ERROR * ((END_ANGLE - before_last_angle)/ANGLE_ERROR) +
+                                                  (END_ANGLE - last_angle)/ANGLE_ERROR * ((END_ANGLE - last_angle)/ANGLE_ERROR)
                                                 );
 
             record_best_path_length(paths, paths->currentPath);

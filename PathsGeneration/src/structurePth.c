@@ -31,7 +31,7 @@ Paths_t *pthCreate(int size, int numComponents) {
   paths->patternCurNum = (int *)calloc(paths->numPaths * paths->sizeMax, sizeof(int));
   paths->maxPositions = (int *)malloc(paths->numPaths * paths->sizeMax * sizeof(int));
   paths->curPthPos = (int *)malloc(paths->numPaths * sizeof(int)); // one int for each path.
-  paths->pathMSD = (double *)malloc(paths->numPaths * sizeof(double)); // one double for each path.
+  paths->pathRMSD = (double *)malloc(paths->numPaths * sizeof(double)); // one double for each path.
   paths->bestPathLength = (int *)malloc(paths->numPaths * sizeof(int));
   paths->maxGrowthLimit = (int *)malloc(paths->numPaths * sizeof(int));
 
@@ -127,7 +127,7 @@ void pthDelete(Paths_t *paths) {
     free(paths->patternCurNum);
     free(paths->maxPositions);
     free(paths->curPthPos);
-    free(paths->pathMSD);
+    free(paths->pathRMSD);
     free(paths->bestPathLength);
     free(paths->maxGrowthLimit);
 

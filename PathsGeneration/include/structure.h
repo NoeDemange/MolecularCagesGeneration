@@ -320,7 +320,7 @@ typedef struct {
   Point_t *results_pos;             /**< Array of results positions. */
   Node **Candidates;                /**< Array of candidate node addresses for the SSMTA* algorithm. */
   double *distancesMultiCandidates; /**< Array of distances for the SSMTA* algorithm. */
-  double *pathMSD;              /**< Array of MSD (Mean Squared Deviation) for each path. Not initialized, just allocated. */
+  double *pathRMSD;              /**< Array of RMSD (Root Mean Squared Deviation) for each path. Not initialized, just allocated. */
   int *bestPathLength;          /**< Best number of real patterns (without start/start neighbor) found per path, -1 if none. */
   int *maxGrowthLimit;          /**< Current depth limit (curPthPos) allowed for each path. */
 } Paths_t;
